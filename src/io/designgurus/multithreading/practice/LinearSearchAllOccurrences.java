@@ -11,27 +11,43 @@ import java.util.*;
 public class LinearSearchAllOccurrences {
 
     private static final int SIZE = 40_000;
-    private static final int NUM_THREADS = 8;
+    private static final int NUM_THREADS = 2;
 
     // Mutex for controlling access to foundPlaces
-    private static final Object lockObj = new Object();
+    private static final Object findLock = new Object();
+    public static final Object countLock = new Object();
+
     private static List<Integer> foundPlaces = new ArrayList<>();
+    private static int count = 0;
 
     private static void linearSearch(int threadId, int[] arr, int key) {
         int chunkSize = arr.length / NUM_THREADS;
         int start = threadId * chunkSize;
-        int end = (threadId == NUM_THREADS - 1) ? arr.length : start + chunkSize;
+        int end = Math.min(start + chunkSize, arr.length-1);
 
-        for (int i = start; i < end; ++i) {
+        List<Integer> localIndices = new ArrayList<>();
+        int localCount = 0;
+
+        for (int i = start; i < end; i++) {
+//            simulateHeavyTask();
             try {
-                Thread.sleep(1); // Simulate a heavy task
+                Thread.sleep(1);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+
             if (arr[i] == key) {
-                synchronized (lockObj) { // Lock when modifying foundPlaces
-                    foundPlaces.add(i); // Append the index to foundPlaces\
-                }
+                localIndices.add(i);
+                localCount++;
+            }
+        }
+
+        if (localCount != 0) {
+            synchronized (findLock) {
+                foundPlaces.addAll(localIndices);
+            }
+            synchronized (countLock) {
+                count += localCount;
             }
         }
     }
@@ -53,19 +69,15 @@ public class LinearSearchAllOccurrences {
         for (int i = 0; i < SIZE; ++i) {
             arr[i] = random.nextInt(100);
         }
-
-        List<Thread> threads = new ArrayList<>(); // List to hold the threads
         int key = 19; // Element to find
 
-        // Start the threads
+        Thread[] threads = new Thread[NUM_THREADS];
         for (int i = 0; i < NUM_THREADS; ++i) {
             int threadId = i;
-            Thread thread = new Thread(() -> linearSearch(threadId, arr, key));
-            threads.add(thread);
-            thread.start();
+            threads[i] = new Thread(() -> linearSearch(threadId, arr, key));
+            threads[i].start();
         }
 
-        // Join the threads with the main thread
         for (Thread thread : threads) {
             try {
                 thread.join();
@@ -74,18 +86,16 @@ public class LinearSearchAllOccurrences {
             }
         }
 
-        // Display the result
-        if (foundPlaces.isEmpty()) {
-            System.out.println("Element not found in the array.");
+        //print the result
+        if (foundPlaces.size() != 0) {
+            System.out.println("found in; " + Arrays.toString(foundPlaces.toArray()));
+            System.out.println("total: " + count);
         } else {
-            System.out.print("Element found at indices: ");
-            synchronized (lockObj) { // Lock when reading from foundPlaces
-                for (int index : foundPlaces) {
-                    System.out.print(index + " ");
-                }
-            }
-            System.out.println();
+            System.out.println("not found");
         }
+
+
+
 
         long end = System.currentTimeMillis();
         System.out.println("Time taken: " + (end - start) / 1000.0 + " seconds");
